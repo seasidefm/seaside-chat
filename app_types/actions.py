@@ -17,4 +17,3 @@ class SocketMessage(BaseModel):
     topic: str
     message_type: SocketMessageType
     payload: dict
-
