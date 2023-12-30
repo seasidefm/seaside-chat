@@ -4,12 +4,15 @@ import os
 import logging
 import sys
 from logging.handlers import TimedRotatingFileHandler
+from typing import Dict, Union, List, Set
 
+from pydantic import ValidationError
 from websockets.server import serve, WebSocketServerProtocol
 from colorlog import ColoredFormatter
 from dotenv import load_dotenv
 
 from app_types.actions import SocketMessage, MessageType
+from app_types.chat_connect import ChatConnect
 from app_types.chat_message import ChatMessage
 
 load_dotenv()
@@ -38,25 +41,62 @@ def setup_logger():
 # Call the setup_logger function to configure the logger
 setup_logger()
 
+# Define a type for WebSocket connections
+WebSocketConnection = Dict[str, Union[WebSocketServerProtocol, List[str]]]
+
+# Dictionary to store WebSocket connections and their subscribed topics
+connections: Dict[str, WebSocketConnection] = {}
+
+# Dictionary to map topics to connection IDs
+topic_subscriptions: Dict[str, Set[str]] = {}
+
+
+async def publish_to_topic(topic: str, message: SocketMessage):
+    subscriptions = topic_subscriptions.get(topic, set())
+    logging.info("Publishing to %s - %s", topic, message)
+    for sub in subscriptions:
+        await connections[sub]["websocket"].send(message.model_dump_json())
+
 
 async def process_message(websocket: WebSocketServerProtocol):
     async for message in websocket:
         try:
             parsed = SocketMessage(**json.loads(message))
             match parsed.message_type:
+                case MessageType.ChatConnect:
+                    logging.info(f"Chat connection for ws:{websocket.id} for {parsed.topic}")
+                    connections[str(websocket.id)] = {"websocket": websocket, "topics": {parsed.topic}}
+
+                    existing_subscriptions = topic_subscriptions.get(parsed.topic, set())
+                    topic_subscriptions[parsed.topic] = {*existing_subscriptions, str(websocket.id)}
+
+                    logging.info(connections)
+
                 case MessageType.NewMessage:
                     message_payload = ChatMessage(**parsed.payload)
 
                     # Act on message content if desired...
                     print(f"{message_payload.sent_by_username}: {message_payload.content}")
 
-                    new_message = SocketMessage(message_type="new_message", payload=message_payload.model_dump())
-                    logging.info(new_message)
-                    await websocket.send(new_message.model_dump_json())
+                    new_message = SocketMessage(topic=parsed.topic, message_type="new_message", payload=message_payload.model_dump())
+
+                    # ACCESS ALL SUBSCRIBED CLIENTS HERE
+                    await publish_to_topic(parsed.topic, new_message)
+
                 case _:
                     logging.warning(f"Received unknown message type {parsed.message_type} - skipping!")
+        except ValidationError as ve:
+            print(message)
+            logging.error(ve)
+
         except Exception as e:
+            print(e.__class__)
+            print(e)
             logging.error(e)
+
+    # After the socket closes, for good or ill
+    logging.info("Socket %s closed, removing from memory", websocket.id)
+    del connections[str(websocket.id)]
 
 
 async def main():

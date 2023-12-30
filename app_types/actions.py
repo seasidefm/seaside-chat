@@ -1,4 +1,3 @@
-import dataclasses
 import enum
 import typing
 
@@ -15,6 +14,7 @@ class MessageType(str, enum.Enum):
 
 
 class SocketMessage(BaseModel):
+    topic: str
     message_type: SocketMessageType
     payload: dict
 
