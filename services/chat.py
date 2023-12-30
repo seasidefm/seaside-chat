@@ -50,9 +50,10 @@ class ChatService:
         Args:
         - socket_id (str): The ID of the WebSocket connection to be removed.
         """
-        del self.connections[socket_id]
         for topic in self.connections[socket_id]["topics"]:
             self.topic_subscriptions[topic].discard(socket_id)
+
+        del self.connections[socket_id]
 
     async def publish_to_topic(self, topic: str, message: SocketMessage):
         """
