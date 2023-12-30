@@ -51,6 +51,12 @@ connections: Dict[str, WebSocketConnection] = {}
 topic_subscriptions: Dict[str, Set[str]] = {}
 
 
+def cleanup_socket(socket_id: str):
+    del connections[socket_id]
+    for topic in connections[socket_id]["topics"]:
+        topic_subscriptions[topic].discard(socket_id)
+
+
 async def publish_to_topic(topic: str, message: SocketMessage):
     subscriptions = topic_subscriptions.get(topic, set())
     logging.info("Publishing to %s - %s", topic, message)
@@ -59,16 +65,17 @@ async def publish_to_topic(topic: str, message: SocketMessage):
 
 
 async def process_message(websocket: WebSocketServerProtocol):
+    connection_id = str(websocket.id)
     async for message in websocket:
         try:
             parsed = SocketMessage(**json.loads(message))
             match parsed.message_type:
                 case MessageType.ChatConnect:
                     logging.info(f"Chat connection for ws:{websocket.id} for {parsed.topic}")
-                    connections[str(websocket.id)] = {"websocket": websocket, "topics": {parsed.topic}}
+                    connections[connection_id] = {"websocket": websocket, "topics": {parsed.topic}}
 
                     existing_subscriptions = topic_subscriptions.get(parsed.topic, set())
-                    topic_subscriptions[parsed.topic] = {*existing_subscriptions, str(websocket.id)}
+                    topic_subscriptions[parsed.topic] = {*existing_subscriptions, connection_id}
 
                     logging.info(connections)
 
@@ -78,7 +85,9 @@ async def process_message(websocket: WebSocketServerProtocol):
                     # Act on message content if desired...
                     print(f"{message_payload.sent_by_username}: {message_payload.content}")
 
-                    new_message = SocketMessage(topic=parsed.topic, message_type="new_message", payload=message_payload.model_dump())
+                    new_message = SocketMessage(
+                        topic=parsed.topic, message_type="new_message", payload=message_payload.model_dump()
+                    )
 
                     # ACCESS ALL SUBSCRIBED CLIENTS HERE
                     await publish_to_topic(parsed.topic, new_message)
@@ -95,8 +104,8 @@ async def process_message(websocket: WebSocketServerProtocol):
             logging.error(e)
 
     # After the socket closes, for good or ill
-    logging.info("Socket %s closed, removing from memory", websocket.id)
-    del connections[str(websocket.id)]
+    logging.info("Socket %s closed, removing from memory", connection_id)
+    cleanup_socket(connection_id)
 
 
 async def main():
