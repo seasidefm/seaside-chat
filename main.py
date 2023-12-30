@@ -1,19 +1,13 @@
 import asyncio
-import json
 import os
 import logging
 import sys
 from logging.handlers import TimedRotatingFileHandler
-from typing import Dict, Union, List, Set
 
-from pydantic import ValidationError
-from websockets.server import serve, WebSocketServerProtocol
+from websockets.server import serve
 from colorlog import ColoredFormatter
 from dotenv import load_dotenv
 
-from app_types.actions import SocketMessage, MessageType
-from app_types.chat_connect import ChatConnect
-from app_types.chat_message import ChatMessage
 from services.chat import ChatService
 
 load_dotenv()
