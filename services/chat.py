@@ -85,37 +85,10 @@ class ChatService:
                         logging.info(
                             f"Chat connection for ws:{websocket.id} for {parsed.topic}"
                         )
-                        self.connections[connection_id] = {
-                            "websocket": websocket,
-                            "topics": {parsed.topic},
-                        }
-
-                        existing_subscriptions = self.topic_subscriptions.get(
-                            parsed.topic, set()
-                        )
-                        self.topic_subscriptions[parsed.topic] = {
-                            *existing_subscriptions,
-                            connection_id,
-                        }
-
-                        logging.info(self.connections)
+                        self.connect_to_chat(parsed.topic, websocket)
 
                     case MessageType.NewMessage:
-                        message_payload = ChatMessage(**parsed.payload)
-
-                        # Act on message content if desired...
-                        print(
-                            f"{message_payload.sent_by_username}: {message_payload.content}"
-                        )
-
-                        new_message = SocketMessage(
-                            topic=parsed.topic,
-                            message_type="new_message",
-                            payload=message_payload.model_dump(),
-                        )
-
-                        # ACCESS ALL SUBSCRIBED CLIENTS HERE
-                        await self.publish_to_topic(parsed.topic, new_message)
+                        await self.new_message(parsed.topic, parsed.payload)
 
                     case _:
                         logging.warning(
@@ -133,3 +106,37 @@ class ChatService:
         # After the socket closes, for good or ill
         logging.info("Socket %s closed, removing from memory", connection_id)
         self.cleanup_socket(connection_id)
+
+    # ========================================
+    # Message action handlers
+    # ========================================
+    def connect_to_chat(self, topic: str, websocket: WebSocketServerProtocol):
+        connection = str(websocket.id)
+        self.connections[connection] = {
+            "websocket": websocket,
+            "topics": {topic},
+        }
+
+        existing_subscriptions = self.topic_subscriptions.get(topic, set())
+        self.topic_subscriptions[topic] = {
+            *existing_subscriptions,
+            connection,
+        }
+
+        logging.info(self.connections)
+
+    async def new_message(self, topic: str, payload: dict):
+        message_payload = ChatMessage(**payload)
+
+        # Act on message content if desired...
+
+        # TODO: Determine if slash command or not
+        # TODO: Handle botsuro integration
+
+        new_message = SocketMessage(
+            topic=topic,
+            message_type="new_message",
+            payload=message_payload.model_dump(),
+        )
+
+        await self.publish_to_topic(topic, new_message)
